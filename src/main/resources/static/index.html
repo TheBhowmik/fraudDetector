@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Fraud Detection Dashboard</title>
+    <!-- Tailwind CSS for clean UI styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SockJS and STOMP client libraries for WebSockets -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans p-6">
+
+<div class="max-w-6xl mx-auto">
+    <header class="mb-8 border-b border-gray-700 pb-4">
+        <h1 class="text-3xl font-bold text-red-500">🛡️ Real-Time Fraud Monitoring Engine</h1>
+        <p class="text-gray-400">Kafka Stream → Spring Boot Backend → WebSocket UI</p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Live Transaction Feed -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-blue-400">📡 Live Transaction Stream</h2>
+            <div id="live-feed" class="space-y-2 overflow-y-auto h-96 pr-2">
+                <p class="text-gray-500 text-sm">Waiting for live events...</p>
+            </div>
+        </div>
+
+        <!-- Fraud Alerts Feed -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-lg border border-red-900">
+            <h2 class="text-xl font-semibold mb-4 text-red-400">🚨 High-Risk Fraud Alerts</h2>
+            <div id="fraud-feed" class="space-y-2 overflow-y-auto h-96 pr-2">
+                <p class="text-gray-500 text-sm">No fraud alerts detected yet...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function connect() {
+        let socket = new SockJS('/ws-fraud-monitor');
+        let stompClient = Stomp.over(socket);
+
+        // Disable debug logs in console
+        stompClient.debug = null;
+
+        stompClient.connect({}, function (frame) {
+            console.log('Connected to WebSocket: ' + frame);
+
+            // Subscribe to all live transactions
+            stompClient.subscribe('/topic/live-transactions', function (message) {
+                let tx = JSON.parse(message.body);
+                appendTransaction(tx, 'live-feed', false);
+            });
+
+            // Subscribe to high-risk fraud alerts
+            stompClient.subscribe('/topic/fraud-alerts', function (message) {
+                let tx = JSON.parse(message.body);
+                appendTransaction(tx, 'fraud-feed', true);
+            });
+        });
+    }
+
+    function appendTransaction(tx, elementId, isFraud) {
+        let feed = document.getElementById(elementId);
+
+        // Remove the "Waiting..." placeholder if present
+        if (feed.children.length === 1 && feed.children[0].tagName === 'P') {
+            feed.innerHTML = '';
+        }
+
+        let card = document.createElement('div');
+        card.className = `p-3 rounded border text-sm flex justify-between items-center ${
+            isFraud ? 'bg-red-950 border-red-600 text-red-200' : 'bg-gray-700 border-gray-600 text-gray-200'
+        }`;
+
+        card.innerHTML = `
+                <div>
+                    <span class="font-bold">${tx.merchant}</span> (${tx.location})<br>
+                    <span class="text-xs text-gray-400">User: ${tx.userId} | ID: ${tx.transactionId.substring(0,8)}...</span>
+                </div>
+                <div class="text-right">
+                    <span class="text-lg font-semibold">$${tx.amount.toFixed(2)}</span><br>
+                    <span class="text-xs ${isFraud ? 'text-red-400 font-bold' : 'text-green-400'}">
+                        Score: ${(tx.fraudScore * 100).toFixed(0)}%
+                    </span>
+                </div>
+            `;
+
+        feed.prepend(card);
+
+        // Keep only the last 20 items to prevent lag
+        if (feed.children.length > 20) {
+            feed.removeChild(feed.lastChild);
+        }
+    }
+
+    window.onload = function() {
+        connect();
+    };
+</script>
+</body>
+</html>
